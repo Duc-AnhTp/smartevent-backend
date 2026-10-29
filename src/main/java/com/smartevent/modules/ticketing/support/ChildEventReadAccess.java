@@ -33,7 +33,7 @@ public class ChildEventReadAccess {
     public boolean publicPhase(TicketSalePhase phase) {
         var now = clock.instant();
         return phase.getStatus() == SalePhaseStatus.ACTIVE && !now.isBefore(phase.getSaleStartAt())
-            && !now.isAfter(phase.getSaleEndAt());
+            && !now.isAfter(phase.getSaleEndAt()) && phase.getSoldOutAt() == null;
     }
     public java.util.Set<UUID> publicTypePhaseIds(UUID typeId) {
         var type = types.findById(typeId).orElseThrow(this::denied);
