@@ -43,8 +43,7 @@ public class StorageController {
             @PathVariable UUID fileId,
             @CurrentUser UserPrincipal currentUser
     ) {
-        return ApiResponse.success(storageService.getPresignedUrl(fileId,
-                currentUser == null ? null : currentUser.getId()));
+        return ApiResponse.success(storageService.getPresignedUrl(fileId, currentUser.getId()));
     }
 
     @DeleteMapping("/{fileId}")
