@@ -52,6 +52,51 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
             Pageable pageable
     );
 
+    @Query("""
+        select e from Event e
+        where e.status = com.smartevent.common.enums.EventStatus.PUBLISHED
+          and e.endTime > :now
+          and (:keyword is null or lower(e.name) like :keyword
+               or lower(coalesce(e.description, '')) like :keyword
+               or exists (select v from Venue v where v.id = e.venueId and lower(v.name) like :keyword))
+          and (:city is null or lower(coalesce(e.city, '')) like :city
+               or exists (select v from Venue v where v.id = e.venueId and lower(v.city) like :city))
+          and (:categoryId is null or exists (select ec from EventCategory ec
+               where ec.id.eventId = e.id and ec.id.categoryId = :categoryId))
+          and (:startFrom is null or e.startTime >= :startFrom)
+          and (:startBefore is null or e.startTime < :startBefore)
+          and (:maxPrice is null or exists (
+            select p.id from TicketType t, TicketSalePhase p, InventoryCounter ic
+            where t.eventId = e.id and p.ticketTypeId = t.id and ic.salePhaseId = p.id
+              and t.status = com.smartevent.common.enums.TicketTypeStatus.ACTIVE
+              and p.status = com.smartevent.common.enums.SalePhaseStatus.ACTIVE
+              and p.soldOutAt is null and p.saleStartAt <= :now and p.saleEndAt >= :now
+              and (ic.totalQuantity - ic.heldQuantity - ic.soldQuantity) > 0
+              and ((:comparison = 'LT' and p.price < :maxPrice)
+                or (:comparison = 'LTE' and p.price <= :maxPrice))))
+    """)
+    Page<Event> searchPublishedFiltered(@Param("now") Instant now,
+        @Param("keyword") String keyword, @Param("city") String city,
+        @Param("categoryId") UUID categoryId, @Param("startFrom") Instant startFrom,
+        @Param("startBefore") Instant startBefore, @Param("maxPrice") java.math.BigDecimal maxPrice,
+        @Param("comparison") String comparison, Pageable pageable);
+
+    @Query("""
+        select new com.smartevent.modules.event.dto.response.PriceEvidence(t.eventId, t.id, p.id, p.price)
+        from TicketType t, TicketSalePhase p, InventoryCounter ic
+        where t.eventId in :eventIds and p.ticketTypeId = t.id and ic.salePhaseId = p.id
+          and t.status = com.smartevent.common.enums.TicketTypeStatus.ACTIVE
+          and p.status = com.smartevent.common.enums.SalePhaseStatus.ACTIVE
+          and p.soldOutAt is null and p.saleStartAt <= :now and p.saleEndAt >= :now
+          and (ic.totalQuantity - ic.heldQuantity - ic.soldQuantity) > 0
+          and (:maxPrice is null or (:comparison = 'LT' and p.price < :maxPrice)
+            or (:comparison = 'LTE' and p.price <= :maxPrice))
+        order by p.price asc, p.id asc
+    """)
+    java.util.List<com.smartevent.modules.event.dto.response.PriceEvidence> findPriceEvidence(
+        @Param("eventIds") java.util.List<UUID> eventIds, @Param("now") Instant now,
+        @Param("maxPrice") java.math.BigDecimal maxPrice, @Param("comparison") String comparison);
+
     Page<Event> findByOrganizerId(UUID organizerId, Pageable pageable);
 
     // Kiểm tra xem Venue đã có sự kiện nào khác diễn ra trong khoảng thời gian này chưa

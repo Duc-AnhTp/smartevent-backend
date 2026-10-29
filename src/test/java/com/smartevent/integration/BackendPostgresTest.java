@@ -158,6 +158,49 @@ class BackendPostgresTest {
         });
     }
 
+    @Test void publicSearchPriceBoundariesDatesDuplicatePhasesAndStaleSoldOutStatus() {
+        Instant now = Instant.parse("2026-10-30T00:00:00Z");
+        String marker = "price-" + UUID.randomUUID();
+        List<Fixture> fixtures = List.of(fixture(), fixture(), fixture(), fixture(), fixture());
+        tx.executeWithoutResult(status -> {
+            for (int i = 0; i < fixtures.size(); i++) {
+                Fixture f = fixtures.get(i);
+                Event event = bean(EventRepository.class).findById(f.event()).orElseThrow();
+                event.setName(marker);
+                event.setStartTime(Instant.parse(i == 4 ? "2026-12-01T00:00:00Z" : "2026-11-01T00:00:00Z"));
+                event.setEndTime(event.getStartTime().plusSeconds(7200));
+                if (i == 2) event.setStatus(EventStatus.DRAFT);
+                bean(EventRepository.class).save(event);
+                TicketSalePhase phase = bean(TicketSalePhaseRepository.class).findById(f.phase()).orElseThrow();
+                phase.setPrice(new BigDecimal(i == 1 ? "500000" : "499999"));
+                phase.setSaleStartAt(now.minusSeconds(60)); phase.setSaleEndAt(now.plusSeconds(86400));
+                bean(TicketSalePhaseRepository.class).save(phase);
+                if (i == 3) {
+                    var counter = bean(InventoryCounterRepository.class).findBySalePhaseId(f.phase()).orElseThrow();
+                    counter.setSoldQuantity(counter.getTotalQuantity());
+                    bean(InventoryCounterRepository.class).save(counter); // phase still ACTIVE, soldOutAt still null
+                }
+            }
+            var f = fixtures.get(0);
+            var extra = bean(TicketSalePhaseRepository.class).save(new TicketSalePhase(f.type(), "Second eligible",
+                new BigDecimal("400000"), 10, now.minusSeconds(60), now.plusSeconds(3600), 4, null, SalePhaseStatus.ACTIVE));
+            bean(InventoryCounterRepository.class).save(new InventoryCounter(f.event(), f.area(), f.type(), extra.getId(), 10));
+        });
+        var repository = bean(EventRepository.class);
+        var page = org.springframework.data.domain.PageRequest.of(0, 1, org.springframework.data.domain.Sort.by("startTime", "id"));
+        Instant from = Instant.parse("2026-11-01T00:00:00Z"), before = Instant.parse("2026-12-01T00:00:00Z");
+        var strict = repository.searchPublishedFiltered(now, "%" + marker + "%", null, null, from, before, new BigDecimal("500000"), "LT", page);
+        assertEquals(1, strict.getTotalElements());
+        assertEquals(fixtures.get(0).event(), strict.getContent().get(0).getId());
+        var inclusive = repository.searchPublishedFiltered(now, "%" + marker + "%", null, null, from, before, new BigDecimal("500000"), "LTE", page);
+        assertEquals(2, inclusive.getTotalElements());
+        assertEquals(2, inclusive.getTotalPages());
+        var evidence = repository.findPriceEvidence(List.of(fixtures.get(0).event()), now, new BigDecimal("500000"), "LT");
+        assertEquals(2, evidence.size());
+        assertEquals(0, evidence.get(0).price().compareTo(new BigDecimal("400000")));
+        assertEquals(SalePhaseStatus.ACTIVE, bean(TicketSalePhaseRepository.class).findById(fixtures.get(3).phase()).orElseThrow().getStatus());
+    }
+
     @Test void closedPhaseKeepsSoldAndHeldCapacityForNewSalePhase() {
         Fixture fixture = fixture();
         tx.executeWithoutResult(status -> {
@@ -702,6 +745,7 @@ class BackendPostgresTest {
             EventSetupServiceImpl.class,EventServiceImpl.class,EventCommandService.class,EventSeatServiceImpl.class,
             TicketSalePhaseServiceImpl.class,AdminUserServiceImpl.class})
     static class TestConfiguration {
+        @Bean java.time.Clock clock() { return java.time.Clock.systemUTC(); }
         @Bean DataSource dataSource() {
             if (postgres != null)
                 return new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
