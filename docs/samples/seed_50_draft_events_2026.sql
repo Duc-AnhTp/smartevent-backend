@@ -1,5 +1,11 @@
+-- Chạy file độc lập: hủy transaction cũ của Query Tool trước khi seed.
+-- Nếu chưa có transaction, PostgreSQL chỉ cảnh báo và tiếp tục bình thường.
+ROLLBACK;
+
 -- SmartEvent: 50 sự kiện HƯ CẤU, 10 tài khoản tổ chức, 30/10–31/12/2026.
--- PostgreSQL 16+, schema backend đã chạy Flyway V1..V21.
+-- PostgreSQL 16+, đã kiểm tra schema backend V20 và V21.
+-- Không phụ thuộc cột tùy chọn events.max_tickets_per_user (được thêm ở V21).
+-- Backend bản mới vẫn cần chạy đầy đủ Flyway migration khi khởi động.
 -- Chạy thủ công trên database development/test; đây KHÔNG phải Flyway migration.
 -- Tài khoản: organizer01@seed.smartevent.test .. organizer10@seed.smartevent.test
 -- Mật khẩu demo dùng chung: SeedOrg@2026! (BCrypt riêng cho từng tài khoản).
@@ -7,6 +13,7 @@
 -- Không tạo files/banner giả: tải banner thật qua UI trước khi gửi duyệt.
 -- Chạy lại không nhân bản, không reset mật khẩu/trạng thái/tồn kho hiện có.
 -- Nếu đã xuất bản sự kiện hoặc sửa cấu hình vé, kiểm tra lại dữ liệu trước khi chạy lại.
+-- pgAdmin: chạy toàn bộ file, bao gồm ROLLBACK ở đầu, không chỉ phần từ BEGIN.
 
 BEGIN;
 SET LOCAL client_encoding = 'UTF8';
@@ -171,7 +178,7 @@ SELECT c.*, ((c.n - 1) % 10) + 1 AS category_n,
 FROM seed_2026_content c;
 
 INSERT INTO events (id, organizer_id, venue_id, name, slug, description,
-                    start_time, end_time, status, city, published_at, max_tickets_per_user)
+                    start_time, end_time, status, city, published_at)
 SELECT e.event_id, pg_temp.seed_2026_id('user', e.category_n),
        pg_temp.seed_2026_id('venue', e.venue_n), e.name || ' 2026',
        'seed-2026-draft-' || lpad(e.n::text, 3, '0'),
@@ -180,7 +187,7 @@ SELECT e.event_id, pg_temp.seed_2026_id('user', e.category_n),
               'Giá vé tiêu chuẩn dự kiến: %s VND; thông tin còn có thể thay đổi. '
               'Đây là sự kiện hư cấu trong bộ dữ liệu thử nghiệm, chưa công bố và chưa mở bán.',
               e.topic, e.audience, v.name, v.city, e.base_price),
-       e.starts_at, e.starts_at + interval '4 hours', 'DRAFT', v.city, NULL, 8
+       e.starts_at, e.starts_at + interval '4 hours', 'DRAFT', v.city, NULL
 FROM seed_2026_events e JOIN seed_2026_venues v ON v.n = e.venue_n
 ON CONFLICT (id) DO NOTHING;
 

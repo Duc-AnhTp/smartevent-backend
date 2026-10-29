@@ -1,6 +1,6 @@
 # Dữ liệu thử cuối năm 2026
 
-File [`seed_50_draft_events_2026.sql`](seed_50_draft_events_2026.sql) dành cho PostgreSQL 16+ sau khi backend đã chạy Flyway đến V21. Chạy thủ công trong database development/test, không đặt vào thư mục Flyway tự động.
+File [`seed_50_draft_events_2026.sql`](seed_50_draft_events_2026.sql) dành cho PostgreSQL 16+, đã kiểm tra với schema backend V20 và V21. Chạy thủ công trong database development/test, không đặt vào thư mục Flyway tự động. File seed không phụ thuộc cột `events.max_tickets_per_user` của V21; giới hạn trong mỗi đợt bán vẫn là 4 vé/đơn và 8 vé/người. Giới hạn tổng vé/người ở cấp sự kiện để mặc định `NULL` nếu schema có cột này.
 
 ## Nội dung
 
@@ -19,7 +19,20 @@ Mật khẩu demo cho cả 10 tài khoản: **`SeedOrg@2026!`**. SQL dùng `pgcr
 
 ## Cách chạy
 
-Trong DBeaver/pgAdmin, mở file SQL với mã hóa UTF-8, chọn database thử nghiệm đã có schema backend và thực thi **toàn bộ script**.
+Trong DBeaver/pgAdmin, mở file SQL với mã hóa UTF-8, chọn database thử nghiệm đã có schema backend và thực thi **toàn bộ script**, bao gồm `ROLLBACK;` ở đầu. File này chạy độc lập: lệnh đầu hủy transaction còn mở trong Query Tool, sau đó `BEGIN;` khởi tạo transaction riêng cho seed. Không ghép với công việc chưa commit khác. Nếu không có transaction đang mở, thông báo `there is no transaction in progress` chỉ là cảnh báo, script vẫn tiếp tục.
+
+Nếu đã gặp lỗi `column "max_tickets_per_user" of relation "events" does not exist` hoặc `25P02 current transaction is aborted`, mở lại file seed mới đã sửa rồi chạy toàn bộ từ dòng `ROLLBACK;` đầu file. Không chỉ chạy tiếp từ dòng lỗi hoặc từ `BEGIN;`. Có thể mở Query Tool mới để tránh phần SQL cũ đang được chọn. Không cần thêm cột thủ công để chạy seed.
+
+Lỗi đó cho biết bảng `events` ở database/schema đang chọn chưa có thay đổi của V21; có thể database chưa chạy migration hoặc pgAdmin đang trỏ database/schema khác với backend. Để chạy backend mới, cần cấu hình đúng `SPRING_DATASOURCE_URL` và khởi động backend để Flyway áp dụng các migration còn thiếu trước bước Hibernate kiểm tra schema. Không sửa trực tiếp `flyway_schema_history` hoặc thêm cột thay Flyway vì có thể làm migration V21 lỗi trùng cột về sau.
+
+Có thể kiểm tra kết nối hiện tại trong pgAdmin bằng:
+
+```sql
+SELECT current_database(), current_schema();
+SELECT table_schema, column_name
+FROM information_schema.columns
+WHERE table_name = 'events' AND column_name = 'max_tickets_per_user';
+```
 
 Hoặc dùng `psql` (đường dẫn dưới đây tính từ thư mục repository backend):
 
@@ -34,6 +47,10 @@ SQL không tải ảnh lên MinIO và không tạo bản ghi ảnh không có fi
 ## Kết quả kiểm tra
 
 Đã kiểm tra ngày 29/10/2026 trên PostgreSQL 16 trong container riêng, không mở cổng mạng hay gắn volume dữ liệu dự án. Áp dụng SQL migration V1–V21, sau đó chạy file seed hai lần trong cùng phiên kết nối: lần hai không thêm bản ghi nghiệp vụ. Kết quả đúng 50 sự kiện nháp, 10 tổ chức (mỗi tổ chức 5 sự kiện), 10 thành phố (mỗi thành phố 5 sự kiện), 100 hạng vé/đợt bán/tồn kho và 4.250 ghế. Kiểm tra BCrypt của 10 mật khẩu demo, role/hồ sơ tổ chức, sức chứa, liên kết bảng, lịch bán và dữ liệu sự kiện cũ đều đạt. Chưa kiểm tra đăng nhập qua HTTP hoặc tích hợp AI.
+
+Sau báo lỗi thiếu `max_tickets_per_user`, đã sửa file và kiểm tra lại trên hai database độc lập: một schema V1–V20 chưa có cột này và một schema V1–V21 có cột này. Trên mỗi database đều chạy seed hai lần trong cùng phiên và kiểm tra số lượng, mật khẩu, quan hệ, ghế, sức chứa và lịch: cả hai đều đạt.
+
+Sau báo lỗi `25P02`, đã thêm `ROLLBACK;` đầu file và tái hiện transaction bị lỗi trên PostgreSQL 16/schema V20. Chạy bản seed mới ngay trong phiên bị lỗi đã khôi phục transaction, commit đủ 50 bản nháp; chạy lần hai vẫn giữ nguyên số lượng. Đây là kiểm tra qua psql, chưa thao tác trực tiếp giao diện pgAdmin của người dùng.
 
 ## Đủ để thử AI chưa?
 
