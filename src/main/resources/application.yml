@@ -1,7 +1,13 @@
 server:
   port: 8080
+  tomcat:
+    max-swallow-size: 11MB
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   config:
     import:
       - optional:classpath:application-jwt.yml
@@ -45,7 +51,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-attempts: 3
+          max-retries: 3
           multiplier: 2
         default-requeue-rejected: false
 
