@@ -201,6 +201,39 @@ class BackendPostgresTest {
         assertEquals(SalePhaseStatus.ACTIVE, bean(TicketSalePhaseRepository.class).findById(fixtures.get(3).phase()).orElseThrow().getStatus());
     }
 
+    @Test void publicSearchRejectsPriceEvidenceWithMismatchedAreaOrInventory() {
+        for (String mismatch : List.of("type-area", "counter-event", "counter-area", "counter-type")) {
+            Fixture target = fixture(), other = fixture();
+            String marker = "mismatched-price-" + UUID.randomUUID();
+            tx.executeWithoutResult(status -> {
+                Event event = bean(EventRepository.class).findById(target.event()).orElseThrow();
+                event.setName(marker);
+                bean(EventRepository.class).save(event);
+                if (mismatch.equals("type-area")) {
+                    TicketType type = bean(TicketTypeRepository.class).findById(target.type()).orElseThrow();
+                    type.setEventAreaId(other.area());
+                    bean(TicketTypeRepository.class).save(type);
+                } else {
+                    InventoryCounter counter = bean(InventoryCounterRepository.class)
+                            .findBySalePhaseId(target.phase()).orElseThrow();
+                    switch (mismatch) {
+                        case "counter-event" -> counter.setEventId(other.event());
+                        case "counter-area" -> counter.setEventAreaId(other.area());
+                        case "counter-type" -> counter.setTicketTypeId(other.type());
+                        default -> throw new AssertionError(mismatch);
+                    }
+                    bean(InventoryCounterRepository.class).save(counter);
+                }
+            });
+            var repository = bean(EventRepository.class);
+            Instant now = Instant.now();
+            assertTrue(repository.findPriceEvidence(List.of(target.event()), now, null, "LTE").isEmpty(), mismatch);
+            var result = repository.searchPublishedFiltered(now, "%" + marker + "%", null, null,
+                    null, null, new BigDecimal("500000"), "LTE", org.springframework.data.domain.PageRequest.of(0, 10));
+            assertEquals(0, result.getTotalElements(), mismatch);
+        }
+    }
+
     @Test void publicSearchRoundTripsDoNotGrowWithPageCardinality() {
         Instant now = Instant.now();
         String marker = "query-count-" + UUID.randomUUID();

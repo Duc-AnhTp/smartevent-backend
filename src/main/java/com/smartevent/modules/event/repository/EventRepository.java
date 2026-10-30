@@ -66,8 +66,10 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
           and (cast(:startFrom as Instant) is null or e.startTime >= :startFrom)
           and (cast(:startBefore as Instant) is null or e.startTime < :startBefore)
           and (cast(:maxPrice as BigDecimal) is null or exists (
-            select p.id from TicketType t, TicketSalePhase p, InventoryCounter ic
+            select p.id from TicketType t, TicketSalePhase p, InventoryCounter ic, EventArea a
             where t.eventId = e.id and p.ticketTypeId = t.id and ic.salePhaseId = p.id
+              and a.id = t.eventAreaId and a.eventId = t.eventId
+              and ic.eventId = t.eventId and ic.ticketTypeId = t.id and ic.eventAreaId = a.id
               and t.status = com.smartevent.common.enums.TicketTypeStatus.ACTIVE
               and p.status = com.smartevent.common.enums.SalePhaseStatus.ACTIVE
               and p.soldOutAt is null and p.saleStartAt <= :now and p.saleEndAt >= :now
@@ -83,8 +85,10 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
 
     @Query("""
         select new com.smartevent.modules.event.dto.response.PriceEvidence(t.eventId, t.id, p.id, p.price)
-        from TicketType t, TicketSalePhase p, InventoryCounter ic
+        from TicketType t, TicketSalePhase p, InventoryCounter ic, EventArea a
         where t.eventId in :eventIds and p.ticketTypeId = t.id and ic.salePhaseId = p.id
+          and a.id = t.eventAreaId and a.eventId = t.eventId
+          and ic.eventId = t.eventId and ic.ticketTypeId = t.id and ic.eventAreaId = a.id
           and t.status = com.smartevent.common.enums.TicketTypeStatus.ACTIVE
           and p.status = com.smartevent.common.enums.SalePhaseStatus.ACTIVE
           and p.soldOutAt is null and p.saleStartAt <= :now and p.saleEndAt >= :now
