@@ -48,4 +48,18 @@ class PublicSearchContractTest {
         assertThrows(RuntimeException.class, () -> new PublicSearchFilter(null, null, BigDecimal.ONE, "EQ"));
         assertThrows(RuntimeException.class, () -> new PublicSearchFilter(null, null, new BigDecimal("-1"), "LT"));
     }
+    @Test void sanitizesNonPositivePageSizeToAtLeastOne() {
+        var events = mock(EventRepository.class);
+        var now = Instant.parse("2026-10-30T00:00:00Z");
+        var stable = PageRequest.of(0, 1, Sort.by("startTime", "id"));
+        when(events.searchPublished(now, null, null, null, stable)).thenReturn(Page.empty(stable));
+        var service = new EventQueryService(Clock.fixed(now, ZoneOffset.UTC), events,
+            mock(CategoryRepository.class), mock(VenueRepository.class), mock(EventFileRepository.class), mock(EventCategoryRepository.class));
+        Pageable invalidPageable = mock(Pageable.class);
+        when(invalidPageable.getPageNumber()).thenReturn(-1);
+        when(invalidPageable.getPageSize()).thenReturn(0);
+        var response = service.searchPublishedEvents(invalidPageable, null, null, null);
+        assertNotNull(response);
+        verify(events).searchPublished(now, null, null, null, stable);
+    }
 }

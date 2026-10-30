@@ -81,8 +81,10 @@ public class EventQueryService {
     @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public PageResponse<EventResponse> searchPublishedEvents(Pageable pageable, String keyword, String city, UUID categoryId) {
         Instant now = clock.instant();
-        var stable = org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(),
-            Math.min(pageable.getPageSize(), 100), org.springframework.data.domain.Sort.by("startTime", "id"));
+        int pageNumber = Math.max(0, pageable.getPageNumber());
+        int pageSize = Math.max(1, Math.min(pageable.getPageSize(), 100));
+        var stable = org.springframework.data.domain.PageRequest.of(pageNumber,
+            pageSize, org.springframework.data.domain.Sort.by("startTime", "id"));
         Page<Event> page = eventRepository.searchPublished(now, searchPattern(keyword), searchPattern(city), categoryId, stable);
         return projectWithPrices(page, now, null, "LTE");
     }
@@ -92,8 +94,10 @@ public class EventQueryService {
             Pageable pageable, String keyword, String city, UUID categoryId,
             PublicSearchFilter filter) {
         Instant now = clock.instant();
-        var stablePage = org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(),
-            Math.min(pageable.getPageSize(), 100), org.springframework.data.domain.Sort.by("startTime", "id"));
+        int pageNumber = Math.max(0, pageable.getPageNumber());
+        int pageSize = Math.max(1, Math.min(pageable.getPageSize(), 100));
+        var stablePage = org.springframework.data.domain.PageRequest.of(pageNumber,
+            pageSize, org.springframework.data.domain.Sort.by("startTime", "id"));
         Page<Event> page = eventRepository.searchPublishedFiltered(now, searchPattern(keyword), searchPattern(city),
             categoryId, filter.startFrom(), filter.startBefore(), filter.maxPrice(), filter.priceComparison(), stablePage);
         return projectWithPrices(page, now, filter.maxPrice(), filter.priceComparison());
