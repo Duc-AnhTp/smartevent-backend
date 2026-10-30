@@ -10,6 +10,25 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class PublicSearchContractTest {
+    @Test void unfilteredSearchAlsoBatchesPriceEvidenceWithTheSameClock() {
+        var events = mock(EventRepository.class);
+        var now = Instant.parse("2026-10-30T00:00:00Z");
+        var stable = PageRequest.of(0, 10, Sort.by("startTime", "id"));
+        var event = new com.smartevent.modules.event.entity.Event();
+        event.setId(java.util.UUID.randomUUID());
+        var typeId = java.util.UUID.randomUUID();
+        var phaseId = java.util.UUID.randomUUID();
+        when(events.searchPublished(now, null, null, null, stable)).thenReturn(new PageImpl<>(java.util.List.of(event), stable, 1));
+        when(events.findPriceEvidence(java.util.List.of(event.getId()), now, null, "LTE"))
+            .thenReturn(java.util.List.of(new com.smartevent.modules.event.dto.response.PriceEvidence(event.getId(), typeId, phaseId, new BigDecimal("500000"))));
+        var service = new EventQueryService(Clock.fixed(now, ZoneOffset.UTC), events,
+            mock(CategoryRepository.class), mock(VenueRepository.class), mock(EventFileRepository.class), mock(EventCategoryRepository.class));
+        var response = service.searchPublishedEvents(PageRequest.of(0, 10), null, null, null);
+        assertEquals(new BigDecimal("500000"), response.content().get(0).price());
+        assertEquals(now, response.content().get(0).priceObservedAt());
+        assertEquals(phaseId, response.content().get(0).salePhaseId());
+        verify(events, times(1)).findPriceEvidence(java.util.List.of(event.getId()), now, null, "LTE");
+    }
     @Test void fixedClockReachesQueryAndStablePagination() {
         var events = mock(EventRepository.class);
         var now = Instant.parse("2026-10-30T00:00:00Z");

@@ -201,6 +201,36 @@ class BackendPostgresTest {
         assertEquals(SalePhaseStatus.ACTIVE, bean(TicketSalePhaseRepository.class).findById(fixtures.get(3).phase()).orElseThrow().getStatus());
     }
 
+    @Test void publicSearchRoundTripsDoNotGrowWithPageCardinality() {
+        Instant now = Instant.now();
+        String marker = "query-count-" + UUID.randomUUID();
+        for (int i = 0; i < 10; i++) {
+            Fixture f = fixture();
+            tx.executeWithoutResult(status -> {
+                Event event = bean(EventRepository.class).findById(f.event()).orElseThrow();
+                event.setName(marker);
+                bean(EventRepository.class).save(event);
+            });
+        }
+        var statistics = bean(EntityManagerFactory.class).unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        var query = new EventQueryService(java.time.Clock.fixed(now, java.time.ZoneOffset.UTC),
+            bean(EventRepository.class), bean(CategoryRepository.class), bean(VenueRepository.class),
+            bean(EventFileRepository.class), bean(EventCategoryRepository.class));
+        try {
+            statistics.clear();
+            assertEquals(1, query.searchPublishedEvents(org.springframework.data.domain.PageRequest.of(0, 1), marker, null, null).content().size());
+            long one = statistics.getPrepareStatementCount();
+            statistics.clear();
+            assertEquals(10, query.searchPublishedEvents(org.springframework.data.domain.PageRequest.of(0, 10), marker, null, null).content().size());
+            long ten = statistics.getPrepareStatementCount();
+            assertTrue(one <= 8 && ten <= 8 && ten <= one + 1,
+                "Public search must batch price/metadata: one=" + one + ", ten=" + ten);
+        } finally {
+            statistics.setStatisticsEnabled(false);
+        }
+    }
+
     @Test void closedPhaseKeepsSoldAndHeldCapacityForNewSalePhase() {
         Fixture fixture = fixture();
         tx.executeWithoutResult(status -> {
@@ -720,7 +750,7 @@ class BackendPostgresTest {
         var order = bean(OrderService.class).createOrderFromReservation(buyer2.getId(), new CreateOrderRequest(resPay.id(), null, PaymentMethod.VNPAY));
         assertEquals("00", bean(VNPayCallbackHandler.class).handleVNPayIpn(notification(order)).rspCode());
 
-        List<EventSeatResponse> seatList = bean(EventSeatService.class).getAvailableSeatsByArea(area.getId());
+        List<EventSeatResponse> seatList = bean(EventSeatService.class).getSeatMapByArea(area.getId());
         assertEquals(3, seatList.size());
 
         Map<String, SeatStatus> statusMap = new HashMap<>();
@@ -729,6 +759,9 @@ class BackendPostgresTest {
         assertEquals(SeatStatus.AVAILABLE, statusMap.get("A-01"));
         assertEquals(SeatStatus.HELD, statusMap.get("A-02"));
         assertEquals(SeatStatus.SOLD, statusMap.get("A-03"));
+        var available = bean(EventSeatService.class).getAvailableSeatsByArea(area.getId());
+        assertEquals(1, available.size());
+        assertEquals(s1.getId(), available.get(0).id());
     }
 
     @Configuration

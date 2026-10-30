@@ -78,10 +78,13 @@ public class EventQueryService {
         return PageResponse.from(eventPage, toResponses(eventPage.getContent()));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public PageResponse<EventResponse> searchPublishedEvents(Pageable pageable, String keyword, String city, UUID categoryId) {
-        Page<Event> eventPage = eventRepository.searchPublished(clock.instant(), searchPattern(keyword), searchPattern(city), categoryId, pageable);
-        return PageResponse.from(eventPage, toResponses(eventPage.getContent()));
+        Instant now = clock.instant();
+        var stable = org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(),
+            Math.min(pageable.getPageSize(), 100), org.springframework.data.domain.Sort.by("startTime", "id"));
+        Page<Event> page = eventRepository.searchPublished(now, searchPattern(keyword), searchPattern(city), categoryId, stable);
+        return projectWithPrices(page, now, null, "LTE");
     }
 
     @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
@@ -93,10 +96,15 @@ public class EventQueryService {
             Math.min(pageable.getPageSize(), 100), org.springframework.data.domain.Sort.by("startTime", "id"));
         Page<Event> page = eventRepository.searchPublishedFiltered(now, searchPattern(keyword), searchPattern(city),
             categoryId, filter.startFrom(), filter.startBefore(), filter.maxPrice(), filter.priceComparison(), stablePage);
+        return projectWithPrices(page, now, filter.maxPrice(), filter.priceComparison());
+    }
+
+    private PageResponse<EventResponse> projectWithPrices(Page<Event> page, Instant now,
+            java.math.BigDecimal maxPrice, String comparison) {
         Map<UUID, PriceEvidence> prices = new HashMap<>();
         if (!page.isEmpty()) {
             for (var evidence : eventRepository.findPriceEvidence(page.getContent().stream().map(Event::getId).toList(),
-                    now, filter.maxPrice(), filter.priceComparison())) prices.putIfAbsent(evidence.eventId(), evidence);
+                    now, maxPrice, comparison)) prices.putIfAbsent(evidence.eventId(), evidence);
         }
         var data = toResponses(page.getContent()).stream().map(e ->
             e.withPrice(prices.get(e.id()), now)).toList();

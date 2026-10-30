@@ -53,9 +53,11 @@ public class EventSeatController {
 
     @GetMapping("/api/v1/areas/{areaId}/seats/available")
     @Operation(summary = "Lấy danh sách các ghế đang còn trống (AVAILABLE) để người dùng chọn mua")
-    public ApiResponse<List<EventSeatResponse>> getAvailableSeatsByArea(@PathVariable UUID areaId) {
+    public ApiResponse<List<EventSeatResponse>> getAvailableSeatsByArea(@PathVariable UUID areaId,
+            @RequestParam(defaultValue = "false") boolean includeUnavailable) {
         readAccess.requireArea(areaId);
-        return ApiResponse.success(eventSeatService.getAvailableSeatsByArea(areaId));
+        return ApiResponse.success(includeUnavailable ? eventSeatService.getSeatMapByArea(areaId)
+                : eventSeatService.getAvailableSeatsByArea(areaId));
     }
 
     @PostMapping("/api/v1/areas/{areaId}/seats")
